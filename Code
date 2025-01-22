@@ -1,0 +1,114 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <SPI.h>
+#include <MFRC522.h>
+
+// Define RFID module pins
+#define SS_PIN 10
+#define RST_PIN 9
+
+MFRC522 rfid(SS_PIN, RST_PIN);
+LiquidCrystal_I2C lcd(0x27, 16, 2); // LCD address 0x27 for 16x2 display
+
+// LED and buzzer pin definitions
+const int defaultLED = 3;  // Default LED (always ON)
+const int grantLED = 4;    // Green LED (Access Granted)
+const int denyLED = 5;     // Red LED (Access Denied)
+const int buzzer = 6;      // Buzzer pin
+
+// Replace this with your RFID tag's UID (retrieved from Serial Monitor)
+byte authorizedUID[] = {0x0A, 0xB4, 0x3C, 0xD2}; 
+
+void setup() {
+  Serial.begin(9600);
+  SPI.begin();
+  rfid.PCD_Init();
+  lcd.init();
+  lcd.backlight();
+
+  // Set LED and buzzer pins as OUTPUT
+  pinMode(defaultLED, OUTPUT);
+  pinMode(grantLED, OUTPUT);
+  pinMode(denyLED, OUTPUT);
+  pinMode(buzzer, OUTPUT);
+
+  digitalWrite(defaultLED, HIGH);  // Keep the default LED always ON
+
+  lcd.setCursor(0, 0);
+  lcd.print("Scan Your Card");
+  Serial.println("Scan your RFID tag...");
+}
+
+void loop() {
+  if (!rfid.PICC_IsNewCardPresent()) {
+    return;
+  }
+
+  if (!rfid.PICC_ReadCardSerial()) {
+    return;
+  }
+
+  Serial.print("Card UID: ");
+  for (byte i = 0; i < rfid.uid.size; i++) {
+    Serial.print(rfid.uid.uidByte[i] < 0x10 ? " 0" : " ");
+    Serial.print(rfid.uid.uidByte[i], HEX);
+  }
+  Serial.println();
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Checking...");
+
+  if (checkUID(rfid.uid.uidByte, authorizedUID)) {
+    lcd.setCursor(0, 0);
+    lcd.print("Access Granted");
+    grantAccess();
+  } else {
+    lcd.setCursor(0, 0);
+    lcd.print("Access Denied");
+    denyAccess();
+  }
+
+  rfid.PICC_HaltA();
+  rfid.PCD_StopCrypto1();
+
+  lcd.setCursor(0, 1);
+  lcd.print("Scan Again...");
+  delay(2000);
+}
+
+// Function to check RFID tag UID
+bool checkUID(byte scannedUID[], byte authorizedUID[]) {
+  for (byte i = 0; i < rfid.uid.size; i++) {
+    if (scannedUID[i] != authorizedUID[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Function for Access Granted - Green LED and Buzzer Melody
+void grantAccess() {
+  digitalWrite(grantLED, HIGH);
+  digitalWrite(denyLED, LOW);
+  tone(buzzer, 1000);  // Play tone at 1000 Hz
+  delay(500);
+  tone(buzzer, 1500);  // Change tone to 1500 Hz
+  delay(500);
+  noTone(buzzer);
+  delay(500);
+  digitalWrite(grantLED, LOW);
+}
+
+// Function for Access Denied - Red LED and Buzzer Alert
+void denyAccess() {
+  digitalWrite(denyLED, HIGH);
+  digitalWrite(grantLED, LOW);
+  for (int i = 0; i < 3; i++) {
+    tone(buzzer, 500);  // Lower pitch beep for denied access
+    delay(300);
+    noTone(buzzer);
+    delay(300);
+  }
+  digitalWrite(denyLED, LOW);
+}
